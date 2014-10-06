@@ -1,17 +1,19 @@
-package main
+package peco
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
 	"runtime"
+	"sync"
+	"time"
 
 	"github.com/jessevdk/go-flags"
 	"github.com/nsf/termbox-go"
-	"github.com/peco/peco"
 )
 
-var version = "v0.2.10"
+var version = "v0.1.0"
 
 type cmdOptions struct {
 	OptHelp           bool   `short:"h" long:"help" description:"show this help message and exit"`
@@ -58,12 +60,12 @@ Options:
 	}
 }
 
-// BufferSize returns the specified buffer size. Fulfills peco.CtxOptions
+// BufferSize returns the specified buffer size. Fulfills CtxOptions
 func (o cmdOptions) BufferSize() int {
 	return o.OptBufferSize
 }
 
-// EnableNullSep returns tru if --null was specified. Fulfills peco.CtxOptions
+// EnableNullSep returns tru if --null was specified. Fulfills CtxOptions
 func (o cmdOptions) EnableNullSep() bool {
 	return o.OptEnableNullSep
 }
@@ -79,11 +81,32 @@ func (o cmdOptions) LayoutType() string {
 	return o.OptLayout
 }
 
-func main() {
-	var err error
-	var st int
+type InObj struct {
+	*Ctx
+}
 
-	defer func() { os.Exit(st) }()
+func (i *InObj) setSomething(in []Match) {
+	m := &sync.Mutex{}
+	var refresh *time.Timer
+
+	i.lines = in
+	m.Lock()
+	if refresh == nil {
+		refresh = time.AfterFunc(100*time.Millisecond, func() {
+			if !i.ExecQuery() {
+				i.DrawMatches(i.lines)
+			}
+			m.Lock()
+			refresh = nil
+			m.Unlock()
+		})
+	}
+	m.Unlock()
+}
+
+func Pecolib(in []Match, prompt string) ([]Match, error) {
+	var err error
+	var out []Match
 
 	if envvar := os.Getenv("GOMAXPROCS"); envvar == "" {
 		runtime.GOMAXPROCS(runtime.NumCPU())
@@ -91,126 +114,73 @@ func main() {
 
 	opts := &cmdOptions{}
 	p := flags.NewParser(opts, flags.PrintErrors)
-	args, err := p.Parse()
+	_, err = p.Parse()
 	if err != nil {
-		showHelp()
-		st = 1
-		return
+		return nil, err
 	}
 
 	if opts.OptLayout != "" {
-		if !peco.IsValidLayoutType(peco.LayoutType(opts.OptLayout)) {
-			fmt.Fprintf(os.Stderr, "Unknown layout: '%s'\n", opts.OptLayout)
-			st = 1
-			return
+		if !IsValidLayoutType(LayoutType(opts.OptLayout)) {
+			return nil, errors.New(fmt.Sprintf("Unknown layout: '%s'\n", opts.OptLayout))
 		}
 	}
 
-	if opts.OptHelp {
-		showHelp()
-		return
-	}
-
-	if opts.OptVersion {
-		fmt.Fprintf(os.Stderr, "peco: %s\n", version)
-		return
-	}
-
-	var in *os.File
-
-	// receive in from either a file or Stdin
-	switch {
-	case len(args) > 0:
-		in, err = os.Open(args[0])
-		if err != nil {
-			st = 1
-			fmt.Fprintln(os.Stderr, err)
-			return
-		}
-	case !peco.IsTty(os.Stdin.Fd()):
-		in = os.Stdin
-	default:
-		fmt.Fprintln(os.Stderr, "You must supply something to work with via filename or stdin")
-		st = 1
-		return
-	}
-
-	ctx := peco.NewCtx(opts)
+	ctx := NewCtx(opts)
 	defer func() {
 		if err := recover(); err != nil {
-			st = 1
-			fmt.Fprintf(os.Stderr, "Error:\n%s", err)
-		}
-
-		if result := ctx.Result(); result != nil {
-			for _, match := range result {
-				line := match.Output()
-				if line[len(line)-1] != '\n' {
-					line = line + "\n"
-				}
-				fmt.Fprint(os.Stdout, line)
-			}
+			fmt.Printf("Error in recover.")
+			return
 		}
 	}()
 
 	if opts.OptRcfile == "" {
-		file, err := peco.LocateRcfile()
+		file, err := LocateRcfile()
 		if err == nil {
 			opts.OptRcfile = file
 		}
 	}
 
 	// Default matcher is IgnoreCase
-	ctx.SetCurrentMatcher(peco.IgnoreCaseMatch)
+	ctx.SetCurrentMatcher(IgnoreCaseMatch)
 
 	if opts.OptRcfile != "" {
 		err = ctx.ReadConfig(opts.OptRcfile)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			st = 1
-			return
+			return nil, err
 		}
 	}
 
-	if len(opts.OptPrompt) > 0 {
-		ctx.SetPrompt(opts.OptPrompt)
+	if len(prompt) > 0 {
+		ctx.SetPrompt(prompt)
 	}
+	/*
+		if len(opts.OptPrompt) > 0 {
+			ctx.SetPrompt(opts.OptPrompt)
+		}
+	*/
 
 	// Deprecated. --no-ignore-case options will be removed in later.
 	if opts.OptNoIgnoreCase {
-		ctx.SetCurrentMatcher(peco.CaseSensitiveMatch)
+		ctx.SetCurrentMatcher(CaseSensitiveMatch)
 	}
 
 	if len(opts.OptInitialMatcher) > 0 {
 		if !ctx.SetCurrentMatcher(opts.OptInitialMatcher) {
-			fmt.Fprintf(os.Stderr, "Unknown matcher: '%s'\n", opts.OptInitialMatcher)
-			st = 1
-			return
+			return nil, errors.New(fmt.Sprintf("Unknown matcher: '%s'\n", opts.OptInitialMatcher))
 		}
 	}
 
-	// Try waiting for something available in the source stream
-	// before doing any terminal initialization (also done by termbox)
-	reader := ctx.NewBufferReader(in)
-	ctx.AddWaitGroup(1)
-	go reader.Loop()
-
-	// This channel blocks until we receive something from `in`
-	<-reader.InputReadyCh()
-
-	err = peco.TtyReady()
+	inobj := InObj{ctx}
+	inobj.setSomething(in)
+	err = TtyReady()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		st = 1
-		return
+		return nil, err
 	}
-	defer peco.TtyTerm()
+	defer TtyTerm()
 
 	err = termbox.Init()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		st = 1
-		return
+		return nil, err
 	}
 	defer termbox.Close()
 
@@ -246,5 +216,15 @@ func main() {
 
 	ctx.WaitDone()
 
-	st = ctx.ExitStatus()
+	st := ctx.ExitStatus()
+	if st != 0 {
+		return nil, errors.New(fmt.Sprintf("something error code: %d", st))
+	}
+
+	if result := ctx.Result(); result != nil {
+		for _, match := range result {
+			out = append(out, match)
+		}
+	}
+	return out, err
 }
