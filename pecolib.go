@@ -4,24 +4,18 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"reflect"
 	"runtime"
 	"sync"
 	"time"
 
-	"github.com/jessevdk/go-flags"
 	"github.com/nsf/termbox-go"
 )
 
-var version = "v0.1.0"
-
-type cmdOptions struct {
-	OptHelp           bool   `short:"h" long:"help" description:"show this help message and exit"`
+type PecoOptions struct {
 	OptTTY            string `long:"tty" description:"path to the TTY (usually, the value of $TTY)"`
 	OptQuery          string `long:"query" description:"initial value for query"`
 	OptRcfile         string `long:"rcfile" description:"path to the settings file"`
 	OptNoIgnoreCase   bool   `long:"no-ignore-case" description:"start in case-sensitive-mode (DEPRECATED)" default:"false"`
-	OptVersion        bool   `long:"version" description:"print the version and exit"`
 	OptBufferSize     int    `long:"buffer-size" short:"b" description:"number of lines to keep in search buffer"`
 	OptEnableNullSep  bool   `long:"null" description:"expect NUL (\\0) as separator for target/output"`
 	OptInitialIndex   int    `long:"initial-index" description:"position of the initial index of the selection (0 base)"`
@@ -30,54 +24,28 @@ type cmdOptions struct {
 	OptLayout         string `long:"layout" description:"layout to be used 'top-down' (default) or 'bottom-up'"`
 }
 
-func showHelp() {
-	// The ONLY reason we're not using go-flags' help option is
-	// because I wanted to tweak the format just a bit... but
-	// there wasn't an easy way to do so
-	os.Stderr.WriteString(`
-Usage: peco [options] [FILE]
-
-Options:
-`)
-
-	t := reflect.TypeOf(cmdOptions{})
-	for i := 0; i < t.NumField(); i++ {
-		tag := t.Field(i).Tag
-
-		var o string
-		if s := tag.Get("short"); s != "" {
-			o = fmt.Sprintf("-%s, --%s", tag.Get("short"), tag.Get("long"))
-		} else {
-			o = fmt.Sprintf("--%s", tag.Get("long"))
-		}
-
-		fmt.Fprintf(
-			os.Stderr,
-			"  %-21s %s\n",
-			o,
-			tag.Get("description"),
-		)
-	}
+func NewPecoOption() *PecoOptions {
+	return &PecoOptions{}
 }
 
 // BufferSize returns the specified buffer size. Fulfills CtxOptions
-func (o cmdOptions) BufferSize() int {
+func (o PecoOptions) BufferSize() int {
 	return o.OptBufferSize
 }
 
 // EnableNullSep returns tru if --null was specified. Fulfills CtxOptions
-func (o cmdOptions) EnableNullSep() bool {
+func (o PecoOptions) EnableNullSep() bool {
 	return o.OptEnableNullSep
 }
 
-func (o cmdOptions) InitialIndex() int {
+func (o PecoOptions) InitialIndex() int {
 	if o.OptInitialIndex >= 0 {
 		return o.OptInitialIndex + 1
 	}
 	return 1
 }
 
-func (o cmdOptions) LayoutType() string {
+func (o PecoOptions) LayoutType() string {
 	return o.OptLayout
 }
 
@@ -104,19 +72,24 @@ func (i *InObj) setSomething(in []Match) {
 	m.Unlock()
 }
 
-func Pecolib(in []Match, prompt string) ([]Match, error) {
+func Pecolib(in []Match) ([]Match, error) {
+	return pecolib(in, &PecoOptions{})
+}
+
+func PecolibWithPrompt(in []Match, prompt string) ([]Match, error) {
+	return pecolib(in, &PecoOptions{OptPrompt: prompt})
+}
+
+func PecolibWithOptions(in []Match, opts *PecoOptions) ([]Match, error) {
+	return pecolib(in, opts)
+}
+
+func pecolib(in []Match, opts *PecoOptions) ([]Match, error) {
 	var err error
 	var out []Match
 
 	if envvar := os.Getenv("GOMAXPROCS"); envvar == "" {
 		runtime.GOMAXPROCS(runtime.NumCPU())
-	}
-
-	opts := &cmdOptions{}
-	p := flags.NewParser(opts, flags.PrintErrors)
-	_, err = p.Parse()
-	if err != nil {
-		return nil, err
 	}
 
 	if opts.OptLayout != "" {
@@ -150,18 +123,8 @@ func Pecolib(in []Match, prompt string) ([]Match, error) {
 		}
 	}
 
-	if len(prompt) > 0 {
-		ctx.SetPrompt(prompt)
-	}
-	/*
-		if len(opts.OptPrompt) > 0 {
-			ctx.SetPrompt(opts.OptPrompt)
-		}
-	*/
-
-	// Deprecated. --no-ignore-case options will be removed in later.
-	if opts.OptNoIgnoreCase {
-		ctx.SetCurrentMatcher(CaseSensitiveMatch)
+	if len(opts.OptPrompt) > 0 {
+		ctx.SetPrompt(opts.OptPrompt)
 	}
 
 	if len(opts.OptInitialMatcher) > 0 {
