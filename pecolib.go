@@ -49,15 +49,15 @@ func (o PecoOptions) LayoutType() string {
 	return o.OptLayout
 }
 
-type InObj struct {
+type ChoicesHelper struct {
 	*Ctx
 }
 
-func (i *InObj) setSomething(in []Match) {
+func (i *ChoicesHelper) draw(choices []Match) {
 	m := &sync.Mutex{}
 	var refresh *time.Timer
 
-	i.lines = in
+	i.lines = choices
 	m.Lock()
 	if refresh == nil {
 		refresh = time.AfterFunc(100*time.Millisecond, func() {
@@ -72,19 +72,19 @@ func (i *InObj) setSomething(in []Match) {
 	m.Unlock()
 }
 
-func Pecolib(in []Match) ([]Match, error) {
-	return pecolib(in, &PecoOptions{})
+func Pecolib(choices []Match) ([]Match, error) {
+	return pecolib(choices, &PecoOptions{})
 }
 
-func PecolibWithPrompt(in []Match, prompt string) ([]Match, error) {
-	return pecolib(in, &PecoOptions{OptPrompt: prompt})
+func PecolibWithPrompt(choices []Match, prompt string) ([]Match, error) {
+	return pecolib(choices, &PecoOptions{OptPrompt: prompt})
 }
 
-func PecolibWithOptions(in []Match, opts *PecoOptions) ([]Match, error) {
-	return pecolib(in, opts)
+func PecolibWithOptions(choices []Match, opts *PecoOptions) ([]Match, error) {
+	return pecolib(choices, opts)
 }
 
-func pecolib(in []Match, opts *PecoOptions) ([]Match, error) {
+func pecolib(choices []Match, opts *PecoOptions) ([]Match, error) {
 	var err error
 	var out []Match
 
@@ -133,8 +133,8 @@ func pecolib(in []Match, opts *PecoOptions) ([]Match, error) {
 		}
 	}
 
-	inobj := InObj{ctx}
-	inobj.setSomething(in)
+	choicesHelper := ChoicesHelper{ctx}
+	choicesHelper.draw(choices)
 	err = TtyReady()
 	if err != nil {
 		return nil, err
