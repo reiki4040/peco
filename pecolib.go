@@ -72,16 +72,63 @@ func (i *ChoicesHelper) draw(choices []Match) {
 	m.Unlock()
 }
 
-func Pecolib(choices []Match) ([]Match, error) {
-	return pecolib(choices, &PecoOptions{})
+type Choosable interface {
+	Choice() string
 }
 
-func PecolibWithPrompt(choices []Match, prompt string) ([]Match, error) {
-	return pecolib(choices, &PecoOptions{OptPrompt: prompt})
+func Pecolib(choices []Choosable) ([]interface{}, error) {
+	return pecolibWrap(choices, &PecoOptions{})
 }
 
-func PecolibWithOptions(choices []Match, opts *PecoOptions) ([]Match, error) {
-	return pecolib(choices, opts)
+func PecolibWithPrompt(choices []Choosable, prompt string) ([]interface{}, error) {
+	return pecolibWrap(choices, &PecoOptions{OptPrompt: prompt})
+}
+
+func PecolibWithOptions(choices []Choosable, opts *PecoOptions) ([]interface{}, error) {
+	return pecolibWrap(choices, opts)
+}
+
+func pecolibWrap(choices []Choosable, opts *PecoOptions) ([]interface{}, error) {
+	if choices == nil {
+		return nil, errors.New("choices is nil.")
+	}
+	if len(choices) == 0 {
+		return nil, errors.New("choices is empty.")
+	}
+
+	choiceMap := make(map[string]interface{})
+	matches := make([]Match, 0, len(choices))
+	for _, c := range choices {
+		if c == nil {
+			continue
+		}
+		s := c.Choice()
+		choiceMap[s] = c
+
+		// TODO investigate NewNoMatch boolean
+		matches = append(matches, NewNoMatch(s, true))
+	}
+
+	if len(matches) == 0 {
+		return nil, errors.New("choices are all nil.")
+	}
+
+	matched, err := pecolib(matches, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	ret := make([]interface{}, 0, len(matched))
+	for _, m := range matched {
+		s := m.Output()
+		if v, ok := choiceMap[s]; ok {
+			ret = append(ret, v)
+		} else {
+			return nil, errors.New("internal error")
+		}
+	}
+
+	return ret, nil
 }
 
 func pecolib(choices []Match, opts *PecoOptions) ([]Match, error) {
