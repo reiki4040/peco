@@ -53,7 +53,7 @@ type ChoicesHelper struct {
 	*Ctx
 }
 
-func (i *ChoicesHelper) draw(choices []Match) {
+func (i *ChoicesHelper) draw(choices []Line) {
 	m := &sync.Mutex{}
 	var refresh *time.Timer
 
@@ -97,7 +97,7 @@ func pecolibWrap(choices []Choosable, opts *PecoOptions) ([]interface{}, error) 
 	}
 
 	choiceMap := make(map[string]interface{})
-	matches := make([]Match, 0, len(choices))
+	matches := make([]Line, 0, len(choices))
 	for _, c := range choices {
 		if c == nil {
 			continue
@@ -106,7 +106,7 @@ func pecolibWrap(choices []Choosable, opts *PecoOptions) ([]interface{}, error) 
 		choiceMap[s] = c
 
 		// TODO investigate NewNoMatch boolean
-		matches = append(matches, NewNoMatch(s, true))
+		matches = append(matches, NewRawLine(s, true))
 	}
 
 	if len(matches) == 0 {
@@ -131,9 +131,9 @@ func pecolibWrap(choices []Choosable, opts *PecoOptions) ([]interface{}, error) 
 	return ret, nil
 }
 
-func pecolib(choices []Match, opts *PecoOptions) ([]Match, error) {
+func pecolib(choices []Line, opts *PecoOptions) ([]Line, error) {
 	var err error
-	var out []Match
+	var out []Line
 
 	if envvar := os.Getenv("GOMAXPROCS"); envvar == "" {
 		runtime.GOMAXPROCS(runtime.NumCPU())
@@ -160,9 +160,6 @@ func pecolib(choices []Match, opts *PecoOptions) ([]Match, error) {
 		}
 	}
 
-	// Default matcher is IgnoreCase
-	ctx.SetCurrentMatcher(IgnoreCaseMatch)
-
 	if opts.OptRcfile != "" {
 		err = ctx.ReadConfig(opts.OptRcfile)
 		if err != nil {
@@ -172,12 +169,6 @@ func pecolib(choices []Match, opts *PecoOptions) ([]Match, error) {
 
 	if len(opts.OptPrompt) > 0 {
 		ctx.SetPrompt(opts.OptPrompt)
-	}
-
-	if len(opts.OptInitialMatcher) > 0 {
-		if !ctx.SetCurrentMatcher(opts.OptInitialMatcher) {
-			return nil, errors.New(fmt.Sprintf("Unknown matcher: '%s'\n", opts.OptInitialMatcher))
-		}
 	}
 
 	choicesHelper := ChoicesHelper{ctx}
@@ -231,10 +222,14 @@ func pecolib(choices []Match, opts *PecoOptions) ([]Match, error) {
 		return nil, errors.New(fmt.Sprintf("something error code: %d", st))
 	}
 
-	if result := ctx.Result(); result != nil {
-		for _, match := range result {
-			out = append(out, match)
-		}
+	resultCh := ctx.ResultCh()
+	if resultCh == nil {
+		return []Line{}, nil
 	}
+
+	for match := range resultCh {
+		out = append(out, match)
+	}
+
 	return out, err
 }
