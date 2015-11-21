@@ -74,6 +74,47 @@ func (i *ChoicesHelper) draw(choices []Line) {
 
 type Choosable interface {
 	Choice() string
+	Value() string
+}
+
+type Choice struct {
+	C string
+	V string
+}
+
+func (c *Choice) Choice() string {
+	return c.C
+}
+
+func (c *Choice) Value() string {
+	return c.V
+}
+
+// Custom implements Choosalbe interface.
+func Choose(itemName, message string, choices []Choosable) ([]Choosable, error) {
+	if len(choices) == 0 {
+		err := fmt.Errorf("there is no %s.", itemName)
+		return nil, err
+	}
+
+	pecoOpt := &PecoOptions{
+		OptPrompt: fmt.Sprintf("%s >", message),
+	}
+
+	result, err := PecolibWithOptions(choices, pecoOpt)
+	if err != nil || len(result) == 0 {
+		err := fmt.Errorf("no select %s.", itemName)
+		return nil, err
+	}
+
+	chosen := make([]Choosable, 0, len(result))
+	for _, r := range result {
+		if c, ok := r.(Choosable); ok {
+			chosen = append(chosen, c)
+		}
+	}
+
+	return chosen, nil
 }
 
 func Pecolib(choices []Choosable) ([]interface{}, error) {
