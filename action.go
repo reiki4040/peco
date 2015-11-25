@@ -4,7 +4,7 @@ import (
 	"unicode"
 
 	"github.com/nsf/termbox-go"
-	"github.com/peco/peco/keyseq"
+	"github.com/reiki4040/peco/keyseq"
 )
 
 // Action describes an action that can be executed upon receiving user

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/nsf/termbox-go"
-	"github.com/peco/peco/keyseq"
+	"github.com/reiki4040/peco/keyseq"
 )
 
 // Keymap holds all the key sequence to action map
