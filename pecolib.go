@@ -91,7 +91,7 @@ func (c *Choice) Value() string {
 }
 
 // Custom implements Choosalbe interface.
-func Choose(itemName, message string, choices []Choosable) ([]Choosable, error) {
+func Choose(itemName, message, defaultQuery string, choices []Choosable) ([]Choosable, error) {
 	if len(choices) == 0 {
 		err := fmt.Errorf("there is no %s.", itemName)
 		return nil, err
@@ -99,6 +99,10 @@ func Choose(itemName, message string, choices []Choosable) ([]Choosable, error) 
 
 	pecoOpt := &PecoOptions{
 		OptPrompt: fmt.Sprintf("%s >", message),
+	}
+
+	if defaultQuery != "" {
+		pecoOpt.OptQuery = defaultQuery
 	}
 
 	result, err := PecolibWithOptions(choices, pecoOpt)
